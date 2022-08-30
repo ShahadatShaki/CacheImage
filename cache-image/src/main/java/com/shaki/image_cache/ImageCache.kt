@@ -5,10 +5,11 @@ import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
+import android.util.Log
 import android.widget.ImageView
 import com.makeramen.roundedimageview.RoundedDrawable
 import com.squareup.picasso.Callback
-import com.squareup.picasso.Picasso
+import com.squareup.picasso.RequestCreator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -22,11 +23,51 @@ class ImageCache {
 
     companion object {
 
-        fun loadAndStoreImage(imageView: ImageView, url: String?) {
-            loadAndStoreImage(imageView, url, true)
+        private val TAG = "Cache-Image"
+
+
+        fun setupCacheImage(context: Context, lifetimeInMillis: Int) {
+            SharedPref.initSharedPref(context)
+            OfflineCache.initOfflineCache(context)
+            SharedPref.put(SharedPref.Key.LIFETIME, lifetimeInMillis)
+
+            checkAllFiles(context)
         }
 
-        fun loadAndStoreImage(imageView: ImageView, url: String?, storeImage: Boolean) {
+        private fun checkAllFiles(context: Context) {
+
+            var images = OfflineCache.getOfflineList<ImageFileInfo>(OfflineCache.ALL_IMAGES)
+
+            val daysOfYear = Calendar.getInstance().timeInMillis
+
+            val lifetimeInDays = SharedPref.getInt(SharedPref.Key.LIFETIME)
+
+            for (i in images.indices.reversed()) {
+                val image = images[i]
+                if (daysOfYear - image.lastOpened > lifetimeInDays) {
+                    val file = getFile(context, image.fileName)
+                    file!!.deleteOnExit()
+                    images.removeAt(i)
+                }
+            }
+
+            OfflineCache.saveOffline(OfflineCache.ALL_IMAGES, images)
+        }
+
+        fun loadAndStoreImage(picasso: RequestCreator, imageView: ImageView, url: String?) {
+            loadAndStoreImage(picasso, imageView, url, true)
+        }
+
+        fun loadAndStoreImage(
+            picasso: RequestCreator,
+            imageView: ImageView,
+            url: String?,
+            storeImage: Boolean
+        ) {
+
+            if (SharedPref.getInstance() == null)
+                throw IllegalArgumentException("Should use getInstance(Context) at least once before using this method.")
+
 
             if (url == null || url.isEmpty()) {
                 return
@@ -41,7 +82,7 @@ class ImageCache {
                         }
                     } else {
                         withContext(Dispatchers.Main) {
-                            loadAndStoreImageFromPicasso(imageView, url, storeImage)
+                            loadAndStoreImageFromPicasso(picasso, imageView, url, storeImage)
                         }
                     }
                 }
@@ -49,26 +90,30 @@ class ImageCache {
 
         }
 
-        private fun loadAndStoreImageFromPicasso(imageView: ImageView?, url: String, storeImage: Boolean) {
-            try {
-                Picasso.get()
-                    .load(url)
-//                    .placeholder(R.drawable.generic_placeholder)
-//                    .error(R.drawable.generic_placeholder)
-                    .into(imageView, object : Callback {
-                        override fun onSuccess() {
-                            if (storeImage)
-                                storeInLocalStorage(imageView!!, url)
-                        }
 
-                        override fun onError(e: Exception) {
-                        }
-                    })
+        private fun loadAndStoreImageFromPicasso(
+            picasso: RequestCreator,
+            imageView: ImageView?,
+            url: String,
+            storeImage: Boolean
+        ) {
+            try {
+                picasso.into(imageView, object : Callback {
+                    override fun onSuccess() {
+                        if (storeImage)
+                            storeInLocalStorage(imageView!!, url)
+                    }
+
+                    override fun onError(e: Exception) {
+                        Log.e(TAG, "onError: ${e.localizedMessage}")
+                    }
+                })
             } catch (e: Exception) {
+                Log.e(TAG, "onError: ${e.localizedMessage}")
             }
         }
 
-        fun storeInLocalStorage(imageView: ImageView, url: String) {
+        private fun storeInLocalStorage(imageView: ImageView, url: String) {
 
             GlobalScope.launch {
                 try {
@@ -88,26 +133,54 @@ class ImageCache {
                     out.close()
                 } catch (e: java.lang.Exception) {
                     e.printStackTrace()
+                    Log.e(TAG, "onError: ${e.localizedMessage}")
+
                 }
             }
 
         }
 
         private fun getFileNameFromUrl(context: Context, url: String): File? {
+            val part = url.split("/").toTypedArray()
+            var imageName = part[part.size - 1].replace(".", "")
+
+            updateImageTime(imageName)
+            return getFile(context, imageName)
+        }
+
+        private fun updateImageTime(imageName: String) {
+            var images = OfflineCache.getOfflineList<ImageFileInfo>(OfflineCache.ALL_IMAGES)
+
+
+            for (i in images.indices.reversed()) {
+                if (images[i].fileName == imageName) {
+                    images[i].lastOpened = Calendar.getInstance().timeInMillis
+                    OfflineCache.saveOffline(OfflineCache.ALL_IMAGES, images)
+                    return
+                }
+            }
+
+            val info = ImageFileInfo()
+            info.lastOpened = Calendar.getInstance().timeInMillis
+            info.fileName = imageName
+
+            images.add(info)
+
+            OfflineCache.saveOffline(OfflineCache.ALL_IMAGES, images)
+        }
+
+        private fun getFile(context: Context, imageName: String): File? {
             var file: File? = null
             file = try {
-//                val root = ContextWrapper(context).getDir("Image", Context.MODE_PRIVATE).absolutePath
                 val root = ContextWrapper(context).cacheDir.absolutePath
                 val myDir = File("$root/cache")
                 myDir.mkdirs()
-                val part = url.split("/").toTypedArray()
-
-                var imageName = part[part.size - 1].replace(".", "")
-
                 File(myDir, imageName)
             } catch (e: java.lang.Exception) {
+                Log.e(TAG, "onError: ${e.localizedMessage}")
                 return null
             }
+
             return file
         }
 
