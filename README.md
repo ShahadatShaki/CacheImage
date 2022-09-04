@@ -24,6 +24,6 @@ please use jitpack
 
 ```groovy
 dependencies {
-    implementation 'com.github.ShahadatShaki:CacheImage:1.0'
+    implementation 'com.github.ShahadatShaki:CacheImage:1.1'
 }
 ```
