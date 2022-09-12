@@ -38,7 +38,7 @@ Finally, Build a Picasso object then call method. With this you will have all pi
 
 ```
 val picasso = Picasso.get()
-		.load(images[p])
+		.load(url)
 		.placeholder(R.drawable.ic_place_image)
 		.error(R.drawable.ic_place_image)
 
