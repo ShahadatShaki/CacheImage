@@ -27,3 +27,22 @@ dependencies {
     implementation 'com.github.ShahadatShaki:CacheImage:1.1'
 }
 ```
+
+Before loading images. use below code, 
+
+```
+ImageCache.setupCacheImage(context, 1000 * 60 * 60 * 24 * 7) //1000 * 60 * 60* 24 * 7 = 7 Days, If any image dose not get loaded within 7 days, That image will removed from cache.
+```
+
+Finally, Build a Picasso object then call method. With this you will have all picasso control.
+
+```
+val picasso = Picasso.get()
+		.load(images[p])
+		.placeholder(R.drawable.ic_place_image)
+		.error(R.drawable.ic_place_image)
+
+ImageCache.loadAndStoreImage(picasso, imageView, url)
+```
+
+You are all done. 
